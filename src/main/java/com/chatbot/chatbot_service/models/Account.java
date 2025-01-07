@@ -60,6 +60,10 @@ public class Account {
     @JsonManagedReference
     private List<Session> sessions;
 
+    @OneToMany(mappedBy = "account", cascade = CascadeType.ALL)
+    @JsonManagedReference
+    private List<ChatSession> chatSessions;
+
     public Account(RegisterRequest registerRequest){
         this.userName = registerRequest.getUserName();
         this.password = registerRequest.getPassword();

@@ -17,9 +17,12 @@ import org.springframework.stereotype.Service;
 import com.chatbot.chatbot_service.DTOs.ChatSessionDTO;
 import com.chatbot.chatbot_service.DTOs.ChatSessionNameDTO;
 import com.chatbot.chatbot_service.DTOs.HistoryDTO;
+import com.chatbot.chatbot_service.DTOs.QuestionDTO;
 import com.chatbot.chatbot_service.DTOs.QuestionRequest;
 import com.chatbot.chatbot_service.models.Account;
+import com.chatbot.chatbot_service.models.ChatSession;
 import com.chatbot.chatbot_service.models.Question;
+import com.chatbot.chatbot_service.repositories.ChatSessionRepository;
 import com.chatbot.chatbot_service.repositories.QuestionRepository;
 
 @Service
@@ -30,6 +33,9 @@ public class QuestionService {
 
     @Autowired
     private AccountService accountService;
+
+    @Autowired
+    private ChatSessionRepository chatSessionRepository;
 
     /**
      * Process the question by invoking the Python script.
@@ -74,18 +80,25 @@ public class QuestionService {
      */
     public ResponseEntity<?> askQuestion(QuestionRequest questionRequest) {
         try {
+            // Soruyu işleme ve cevap oluşturma
             String questionText = questionRequest.getQuestion();
             String response = processQuestion(questionText, questionRequest.getModel());
 
-            // Save the question and response to the database
+            // Question nesnesini kaydet
             Question question = new Question();
             question.setQuestion(questionText);
             question.setModelId(questionRequest.getModel());
             question.setResponse(response);
             question.setTimeStamp(LocalDateTime.now());
+
+            // Guest kullanıcılar için Account ve ChatSession ilişkisiz
+            question.setChatSession(null);
+            question.setAccount(null);
+
             questionRepository.save(question);
 
-            return ResponseEntity.ok(Map.of("answer", response,"model", question.getModelId()));
+            // Yanıt döndür
+            return ResponseEntity.ok(Map.of("answer", response, "model", question.getModelId()));
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -98,6 +111,22 @@ public class QuestionService {
      */
     public ResponseEntity<?> askQuestionLoggedIn(QuestionRequest questionRequest, Authentication authentication) {
         try {
+
+            if(questionRequest.getChatSessionId() == null){
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Chat session ID is required.");
+            }
+
+            Optional<ChatSession> chatSessions = chatSessionRepository.findById(questionRequest.getChatSessionId());
+            if(!chatSessions.isPresent()){
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Chat session not found.");
+            }
+
+            if (!chatSessions.get().getAccount().getId().equals(accountService.getAccount(authentication).getId())) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
+            }
+            
+            ChatSession chatSession = chatSessions.get();
+
             String questionText = questionRequest.getQuestion();
             String response = processQuestion(questionText, questionRequest.getModel());
 
@@ -107,6 +136,7 @@ public class QuestionService {
             question.setModelId(questionRequest.getModel());
             question.setResponse(response);
             question.setAccount(accountService.getAccount(authentication));
+            question.setChatSession(chatSession);
             question.setTimeStamp(LocalDateTime.now());
             questionRepository.save(question);
 
@@ -117,33 +147,57 @@ public class QuestionService {
         }
     }
 
-    public ResponseEntity<?> getHistory(Authentication authentication) {
-    // Ensure the user is authenticated
-    if (authentication == null) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("You are not logged in!");
+    public ResponseEntity<?> createChatSession(Authentication authentication, ChatSessionNameDTO chatSessionNameDTO) {
+        Account account = accountService.getAccount(authentication);
+        ChatSession chatSession = new ChatSession();
+        chatSession.setChatName(chatSessionNameDTO.getChatName());
+        chatSession.setAccount(account);
+        chatSession.setCreatedAt(LocalDateTime.now());
+
+        chatSessionRepository.save(chatSession);
+        return ResponseEntity.ok(chatSession.getId());
     }
 
-    // Get the account from the authentication object
-    Account account = accountService.getAccount(authentication);
+    public ResponseEntity<?> getChatSessions(Authentication authentication) {
+        Account account = accountService.getAccount(authentication);
+        List<ChatSession> chatSessions = chatSessionRepository.findByAccountId(account.getId());
+        List<ChatSessionDTO> chatSessionDTOs = chatSessions.stream()
+                .map(chatSession -> {
+                    ChatSessionDTO chatSessionDTO = new ChatSessionDTO();
+                    chatSessionDTO.setId(chatSession.getId());
+                    chatSessionDTO.setChatName(chatSession.getChatName());
+                    chatSessionDTO.setCreatedAt(chatSession.getCreatedAt());
+                    return chatSessionDTO;
+                })
+                .collect(Collectors.toList());
 
-    // Fetch user's question history
-    List<HistoryDTO> history = questionRepository.findByAccount(account).stream()
-            .map(question -> {
-                HistoryDTO historyDTO = new HistoryDTO();
-                historyDTO.setModel(question.getModelId());
-                historyDTO.setQuestion(question.getQuestion());
-                historyDTO.setQdate(question.getTimeStamp());
-                historyDTO.setAnswer(question.getResponse());
-                return historyDTO;
-            })
-            .collect(Collectors.toList());
-
-    // Handle empty history case
-    if (history.isEmpty()) {
-        return ResponseEntity.ok("You have no question history.");
+        return ResponseEntity.ok(chatSessionDTOs);
     }
 
-    return ResponseEntity.ok(history);
-}
+    public ResponseEntity<?> getSingleChatSession(Long id, Authentication authentication) {
+        Account account = accountService.getAccount(authentication);
+        Optional<ChatSession> chatSessions = chatSessionRepository.findByIdAndAccountId(id, account.getId());
+        if(!chatSessions.isPresent()){
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Chat session not found.");
+        }
+        if(chatSessions.get().getAccount().getId() != account.getId()){
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
+        }
+        ChatSession chatSession = chatSessions.get();
+        List<QuestionDTO> questions = chatSession.getQuestions().stream()
+                .map(question -> {
+                    QuestionDTO questionDTO = new QuestionDTO();
+                    questionDTO.setQuestion(question.getQuestion());
+                    questionDTO.setResponse(question.getResponse());
+                    questionDTO.setTimeStamp(question.getTimeStamp());
+                    questionDTO.setModel(question.getModelId());
+                    questionDTO.setId(question.getId());
+                    return questionDTO;
+                })
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(questions);
+    }
+
 
 }

@@ -41,4 +41,8 @@ public class Question {
     @ManyToOne
     @JoinColumn(name = "account_id", referencedColumnName = "id", nullable = true)
     private Account account;
+
+    @ManyToOne
+    @JoinColumn(name = "chatsession_id", referencedColumnName = "id", nullable = true)
+    private ChatSession chatSession;
 }
