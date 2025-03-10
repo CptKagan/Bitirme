@@ -37,17 +37,14 @@ public class QuestionService {
     @Autowired
     private ChatSessionRepository chatSessionRepository;
 
-    /**
-     * Process the question by invoking the Python script.
-     */
     private String processQuestion(String questionText, int model) throws Exception {
         String scriptPath;
         switch (model) {
             case 1:
-                scriptPath = "C:\\Users\\mkaga\\OneDrive\\Masaüstü\\BITIRME\\LAMA3.1FIRSTRUN\\RAGwithbackend.py";
+                scriptPath = "";
                 break;
             case 2:
-                scriptPath = "C:\\Users\\mkaga\\OneDrive\\Masaüstü\\BITIRME\\LAMA3.1FIRSTRUN\\RAGwithbackend2.py";
+                scriptPath = "";
                 break;
             default:
                 throw new IllegalArgumentException("Invalid model number");
@@ -55,10 +52,8 @@ public class QuestionService {
         
         ProcessBuilder processBuilder = new ProcessBuilder("python", scriptPath, questionText);
 
-        // Execute the Python script
         Process process = processBuilder.start();
 
-        // Read the output of the Python script
         BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
         StringBuilder output = new StringBuilder();
         String line;
@@ -66,7 +61,6 @@ public class QuestionService {
             output.append(line).append("\n");
         }
 
-        // Wait for the process to complete
         int exitCode = process.waitFor();
         if (exitCode != 0) {
             throw new RuntimeException("Python script execution failed with exit code " + exitCode);
@@ -75,29 +69,22 @@ public class QuestionService {
         return output.toString();
     }
 
-    /**
-     * Handle question asked by an anonymous user.
-     */
     public ResponseEntity<?> askQuestion(QuestionRequest questionRequest) {
         try {
-            // Soruyu işleme ve cevap oluşturma
             String questionText = questionRequest.getQuestion();
             String response = processQuestion(questionText, questionRequest.getModel());
 
-            // Question nesnesini kaydet
             Question question = new Question();
             question.setQuestion(questionText);
             question.setModelId(questionRequest.getModel());
             question.setResponse(response);
             question.setTimeStamp(LocalDateTime.now());
 
-            // Guest kullanıcılar için Account ve ChatSession ilişkisiz
             question.setChatSession(null);
             question.setAccount(null);
 
             questionRepository.save(question);
 
-            // Yanıt döndür
             return ResponseEntity.ok(Map.of("answer", response, "model", question.getModelId()));
 
         } catch (Exception e) {
@@ -106,9 +93,6 @@ public class QuestionService {
         }
     }
 
-    /**
-     * Handle question asked by a logged-in user.
-     */
     public ResponseEntity<?> askQuestionLoggedIn(QuestionRequest questionRequest, Authentication authentication) {
         try {
 
@@ -130,7 +114,6 @@ public class QuestionService {
             String questionText = questionRequest.getQuestion();
             String response = processQuestion(questionText, questionRequest.getModel());
 
-            // Save the question and response to the database with account information
             Question question = new Question();
             question.setQuestion(questionText);
             question.setModelId(questionRequest.getModel());
