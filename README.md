@@ -4,6 +4,6 @@ Backend ve RAG elementlerini kapsar.
 
 ## Features
 
-- Backend implemented with Java
+- Java ile uygulanan backend
 - Qdrant ile Retrieval-Augmented Generation (RAG) sistemi
 - LLaMA ve GPT modellerini destekler
